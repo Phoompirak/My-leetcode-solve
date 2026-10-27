@@ -1,18 +1,22 @@
 name: Sync LeetCode
 
 on:
-  workflow_dispatch: # อนุญาตให้กดปุ่มรันมือได้ตลอดเวลา
+  workflow_dispatch: # รันแบบกดมือได้ตลอดเวลา
   schedule:
-    - cron: "0 0 * * *" # ตั้งเวลาให้รันอัตโนมัติทุกวัน (ถ้าต้องการ)
+    - cron: "0 0 * * *" # รันอัตโนมัติทุกเที่ยงคืน UTC
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write # ให้สิทธิ์ Action ในการเขียนและ Push commit
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 1. ซิงก์โจทย์จาก LeetCode
       - name: Sync LeetCode Submissions
         uses: joshcai/leetcode-sync@v1.5
         with:
@@ -20,3 +24,32 @@ jobs:
           leetcode-session: ${{ secrets.LEETCODE_SESSION }}
           leetcode-csrf-token: ${{ secrets.CSRFTOKEN }}
           destination-folder: "solutions"
+
+      # 2. ดึงไฟล์ที่ Action ตัวบนเพิ่ง Commit ลงมาก่อน
+      - name: Pull latest commits from leetcode-sync
+        run: |
+          git pull origin main
+
+      # 3. เตรียมสภาพแวดล้อม Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      # 4. รันสคริปต์สร้าง README.md, EASY.md, MEDIUM.md, HARD.md, TOPICS.md
+      - name: Generate README and Category Markdown
+        run: |
+          python generate_readme.py
+
+      # 5. ตรวจสอบและ Commit + Push ไฟล์ Markdown ถ้ามีการเปลี่ยนแปลง
+      - name: Commit and Push Markdown Files
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md EASY.md MEDIUM.md HARD.md TOPICS.md
+          git diff --quiet && git diff --staged --quiet || (git commit -m "docs: auto-generate README and problem catalogs" && git push origin main)
